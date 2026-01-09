@@ -216,7 +216,6 @@ def register_lakeflow_source(spark):
 
     class LakeflowConnect:
         """AWS CloudWatch Metrics connector implementing the LakeflowConnect interface."""
-
         def __init__(self, options: dict[str, str]) -> None:
             """
             Initialize the AWS CloudWatch Metrics connector with connection-level options.
