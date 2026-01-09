@@ -237,7 +237,10 @@ def register_lakeflow_source(spark):
             if not region:
                 raise ValueError("AWS CloudWatch connector requires 'region' in options")
             if not self.namespace:
-                raise ValueError("AWS CloudWatch connector requires 'cloudwatch_metrics_namespace' in options")
+                raise ValueError(
+                    "AWS CloudWatch connector requires 'cloudwatch_metrics_namespace' "
+                    "in options"
+                )
 
             # Initialize boto3 CloudWatch client
             self.client = boto3.client(
@@ -313,7 +316,8 @@ def register_lakeflow_source(spark):
                 except ClientError as e:
                     error_code = e.response.get("Error", {}).get("Code", "")
                     if error_code == "Throttling":
-                        # Retry with exponential backoff (simplified - in production use retry decorator)
+                        # Retry with exponential backoff
+                        # (simplified - in production use retry decorator)
                         time.sleep(1)
                         continue
                     raise RuntimeError(f"Failed to list metrics: {e}")
@@ -394,7 +398,6 @@ def register_lakeflow_source(spark):
                 Dictionary with parsed options:
                 - period: Period in seconds (multiple of 60)
                 - statistics: List of statistics
-                - unit: Unit string or None
             """
             # Parse period
             try:
@@ -419,12 +422,9 @@ def register_lakeflow_source(spark):
             if not isinstance(statistics, list):
                 statistics = ["Average"]
 
-            unit = table_options.get("unit")
-
             return {
                 "period": period,
                 "statistics": statistics,
-                "unit": unit,
             }
 
         def _determine_time_range(self, start_offset: dict) -> tuple[datetime, datetime]:
@@ -467,12 +467,33 @@ def register_lakeflow_source(spark):
 
             return start_time, end_time
 
+        def _convert_dimensions(self, dimensions: List[Dict[str, str]]) -> tuple[List[Dict[str, str]], Dict[str, str]]:
+            """
+            Convert dimensions from ListMetrics format to GetMetricData format.
+
+            Args:
+                dimensions: List of dimension dicts with Name/Value keys
+
+            Returns:
+                Tuple of (dims_for_query, dims_dict):
+                - dims_for_query: List of dicts for GetMetricData API
+                - dims_dict: Dict mapping dimension names to values
+            """
+            dims_for_query = []
+            dims_dict = {}
+            for dim in dimensions:
+                dim_name = dim.get("Name")
+                dim_value = dim.get("Value")
+                if dim_name and dim_value:
+                    dims_for_query.append({"Name": dim_name, "Value": dim_value})
+                    dims_dict[dim_name] = dim_value
+            return dims_for_query, dims_dict
+
         def _build_metric_queries(
             self,
             discovered_metrics: List[Dict[str, Any]],
             period: int,
             statistics: List[str],
-            unit: str | None,
         ) -> tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]]]:
             """
             Build MetricDataQueries and query metadata from discovered metrics.
@@ -481,7 +502,6 @@ def register_lakeflow_source(spark):
                 discovered_metrics: List of metrics from ListMetrics API
                 period: Period in seconds for metric aggregation
                 statistics: List of statistics to retrieve
-                unit: Unit for the metric (optional)
 
             Returns:
                 Tuple of (metric_queries, query_metadata):
@@ -490,21 +510,12 @@ def register_lakeflow_source(spark):
             """
             metric_queries = []
             query_metadata = {}
-
             query_id_counter = 1
+
             for metric in discovered_metrics:
                 metric_name = metric.get("MetricName")
                 dimensions = metric.get("Dimensions", [])
-
-                # Convert dimensions to the format needed for GetMetricData
-                dims_for_query = []
-                dims_dict = {}
-                for dim in dimensions:
-                    dim_name = dim.get("Name")
-                    dim_value = dim.get("Value")
-                    if dim_name and dim_value:
-                        dims_for_query.append({"Name": dim_name, "Value": dim_value})
-                        dims_dict[dim_name] = dim_value
+                dims_for_query, dims_dict = self._convert_dimensions(dimensions)
 
                 # Create a query for each statistic
                 for stat in statistics:
@@ -525,13 +536,11 @@ def register_lakeflow_source(spark):
                         "ReturnData": True
                     })
 
-                    # Store metadata for this query
                     query_metadata[query_id] = {
                         "namespace": self.namespace,
                         "metric_name": metric_name,
                         "dimensions": dims_dict,
                         "statistic": stat,
-                        "unit": unit  # May be None, will use default from API if not specified
                     }
 
             return metric_queries, query_metadata
@@ -569,10 +578,8 @@ def register_lakeflow_source(spark):
                 if not timestamps or not values:
                     continue
 
-                # Get unit from result if available, otherwise use metadata
+                # Get unit from result (API returns unit in response)
                 result_unit = result.get("Unit")
-                if not result_unit:
-                    result_unit = metadata.get("unit")
 
                 # Create a record for each timestamp-value pair
                 for ts, val in zip(timestamps, values):
@@ -638,7 +645,8 @@ def register_lakeflow_source(spark):
                 except ClientError as e:
                     error_code = e.response.get("Error", {}).get("Code", "")
                     if error_code == "Throttling":
-                        # Retry with exponential backoff (simplified - in production use retry decorator)
+                        # Retry with exponential backoff
+                        # (simplified - in production use retry decorator)
                         time.sleep(1)
                         continue
                     raise RuntimeError(f"Failed to get metric data: {e}")
@@ -714,69 +722,83 @@ def register_lakeflow_source(spark):
                 - Automatically manages time ranges:
                   - First run: 60 minutes ago to current time
                   - Subsequent runs: from stored cursor (with 5-minute lookback) to current time
-                - Returns records with namespace, metric_name, timestamp, value, statistic, unit, dimensions, region
+                - Returns records with namespace, metric_name, timestamp, value,
+                  statistic, unit, dimensions, region
 
             Optional table_options:
-                - period: Period in seconds for metric aggregation (default: 300, must be multiple of 60)
+                - period: Period in seconds for metric aggregation
+                  (default: 300, must be multiple of 60)
                 - statistics: List of statistics to retrieve (default: ["Average"])
                 - dimensions: Dimensions filter as dict (optional)
-                - unit: Unit for the metric (optional)
             """
             if table_name != "metrics":
                 raise ValueError(f"Unsupported table: {table_name!r}")
 
-            # Parse table options
+            # Parse table options and discover metrics
             parsed_options = self._parse_table_options(table_options)
-            period = parsed_options["period"]
-            statistics = parsed_options["statistics"]
-            unit = parsed_options["unit"]
-
-            # Discover all metrics
             discovered_metrics = self._discover_metrics(table_options)
 
             if not discovered_metrics:
-                # No metrics found, return empty iterator with same offset
-                if start_offset:
-                    return iter([]), start_offset
-                return iter([]), {}
+                return iter([]), start_offset if start_offset else {}
 
-            # Determine time range
+            # Determine time range and build queries
             start_time, end_time = self._determine_time_range(start_offset)
-
-            # Build MetricDataQueries
             metric_queries, query_metadata = self._build_metric_queries(
-                discovered_metrics, period, statistics, unit
+                discovered_metrics,
+                parsed_options["period"],
+                parsed_options["statistics"]
             )
 
-            # Split into batches of 500 (GetMetricData limit) and fetch data
+            # Fetch data in batches
+            all_records, max_timestamp = self._fetch_all_batches(
+                metric_queries, query_metadata, start_time, end_time
+            )
+
+            # Compute next cursor
+            next_cursor = self._compute_next_cursor(max_timestamp, start_time)
+            next_offset = start_offset if (not all_records and start_offset) else {"cursor": next_cursor}
+
+            return iter(all_records), next_offset
+
+        def _fetch_all_batches(
+            self,
+            metric_queries: List[Dict[str, Any]],
+            query_metadata: Dict[str, Dict[str, Any]],
+            start_time: datetime,
+            end_time: datetime,
+        ) -> tuple[List[dict], str | None]:
+            """
+            Fetch metric data for all queries in batches.
+
+            Args:
+                metric_queries: List of MetricDataQuery dictionaries
+                query_metadata: Dictionary mapping query ID to metadata
+                start_time: Start time for data retrieval
+                end_time: End time for data retrieval
+
+            Returns:
+                Tuple of (all_records, max_timestamp):
+                - all_records: List of all metric records
+                - max_timestamp: Maximum timestamp across all batches
+            """
             batch_size = 500
             all_records = []
             max_timestamp = None
 
             for i in range(0, len(metric_queries), batch_size):
                 batch = metric_queries[i:i + batch_size]
-                batch_metadata = {qid: query_metadata[qid] for qid in [q["Id"] for q in batch]}
+                batch_ids = [q["Id"] for q in batch]
+                batch_metadata = {qid: query_metadata[qid] for qid in batch_ids}
 
                 batch_records, batch_max_ts = self._fetch_metric_data_batch(
                     batch, batch_metadata, start_time, end_time
                 )
                 all_records.extend(batch_records)
 
-                # Update max timestamp across all batches
-                if batch_max_ts:
-                    if max_timestamp is None or batch_max_ts > max_timestamp:
-                        max_timestamp = batch_max_ts
+                if batch_max_ts and (max_timestamp is None or batch_max_ts > max_timestamp):
+                    max_timestamp = batch_max_ts
 
-            # Compute next cursor
-            next_cursor = self._compute_next_cursor(max_timestamp, start_time)
-
-            # If no new records and we had a start_offset, return same offset
-            if not all_records and start_offset:
-                next_offset = start_offset
-            else:
-                next_offset = {"cursor": next_cursor}
-
-            return iter(all_records), next_offset
+            return all_records, max_timestamp
 
 
     ########################################################
