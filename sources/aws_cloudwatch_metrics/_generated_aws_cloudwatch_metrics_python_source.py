@@ -467,7 +467,9 @@ def register_lakeflow_source(spark):
 
             return start_time, end_time
 
-        def _convert_dimensions(self, dimensions: List[Dict[str, str]]) -> tuple[List[Dict[str, str]], Dict[str, str]]:
+        def _convert_dimensions(
+            self, dimensions: List[Dict[str, str]]
+        ) -> tuple[List[Dict[str, str]], Dict[str, str]]:
             """
             Convert dimensions from ListMetrics format to GetMetricData format.
 
@@ -756,7 +758,10 @@ def register_lakeflow_source(spark):
 
             # Compute next cursor
             next_cursor = self._compute_next_cursor(max_timestamp, start_time)
-            next_offset = start_offset if (not all_records and start_offset) else {"cursor": next_cursor}
+            if not all_records and start_offset:
+                next_offset = start_offset
+            else:
+                next_offset = {"cursor": next_cursor}
 
             return iter(all_records), next_offset
 
