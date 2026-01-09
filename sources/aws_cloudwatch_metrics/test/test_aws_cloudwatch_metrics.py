@@ -1,7 +1,7 @@
 """Unit tests for AWS CloudWatch Metrics connector."""
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 import json
 import pytest
 from pyspark.sql.types import StructType
@@ -13,7 +13,7 @@ def get_test_options():
     """Get test options from configs/dev_config.json or use defaults for mocking."""
     parent_dir = Path(__file__).parent.parent
     config_path = parent_dir / "configs" / "dev_config.json"
-    
+
     if config_path.exists():
         with open(config_path, "r") as f:
             config = json.load(f)
@@ -45,7 +45,7 @@ class TestLakeflowConnectInit:
         options = get_test_options()
 
         connector = LakeflowConnect(options)
-        
+
         expected_options = get_test_options()
 
         assert connector.namespace == expected_options["cloudwatch_metrics_namespace"]
@@ -111,7 +111,7 @@ class TestLakeflowConnectInit:
             LakeflowConnect(options)
 
 
-class TestListTables:
+class TestListTables:  # pylint: disable=too-few-public-methods
     """Test list_tables method."""
 
     @patch("sources.aws_cloudwatch_metrics.aws_cloudwatch_metrics.boto3")
@@ -290,7 +290,7 @@ class TestDetermineTimeRange:
         assert abs((start_time - expected_start).total_seconds()) < 1
 
 
-class TestBuildMetricQueries:
+class TestBuildMetricQueries:  # pylint: disable=too-few-public-methods
     """Test _build_metric_queries method."""
 
     @patch("sources.aws_cloudwatch_metrics.aws_cloudwatch_metrics.boto3")
@@ -319,7 +319,7 @@ class TestBuildMetricQueries:
         assert metadata["m1"]["metric_name"] == "CPUUtilization"
 
 
-class TestProcessMetricDataResults:
+class TestProcessMetricDataResults:  # pylint: disable=too-few-public-methods
     """Test _process_metric_data_results method."""
 
     @patch("sources.aws_cloudwatch_metrics.aws_cloudwatch_metrics.boto3")
@@ -428,7 +428,7 @@ class TestGetTableSchema:
             connector.get_table_schema("invalid_table", {})
 
 
-class TestReadTableMetadata:
+class TestReadTableMetadata:  # pylint: disable=too-few-public-methods
     """Test read_table_metadata method."""
 
     @patch("sources.aws_cloudwatch_metrics.aws_cloudwatch_metrics.boto3")
@@ -465,7 +465,7 @@ class TestReadTable:
         connector = LakeflowConnect(options)
         records, offset = connector.read_table("metrics", {}, {})
 
-        assert list(records) == []
+        assert not list(records)
         assert offset == {}
 
     @patch("sources.aws_cloudwatch_metrics.aws_cloudwatch_metrics.boto3")
@@ -514,4 +514,3 @@ class TestReadTable:
         connector = LakeflowConnect(options)
         with pytest.raises(ValueError, match="Unsupported table"):
             connector.read_table("invalid_table", {}, {})
-

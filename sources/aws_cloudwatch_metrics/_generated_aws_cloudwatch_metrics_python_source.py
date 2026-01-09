@@ -215,6 +215,8 @@ def register_lakeflow_source(spark):
     ########################################################
 
     class LakeflowConnect:
+        """AWS CloudWatch Metrics connector implementing the LakeflowConnect interface."""
+
         def __init__(self, options: dict[str, str]) -> None:
             """
             Initialize the AWS CloudWatch Metrics connector with connection-level options.
@@ -285,10 +287,8 @@ def register_lakeflow_source(spark):
                 filter_dimensions = table_options["dimensions"]
                 if isinstance(filter_dimensions, str):
                     # Parse JSON string if provided as string
-                    try:
-                        filter_dimensions = json.loads(filter_dimensions)
-                    except json.JSONDecodeError:
-                        raise ValueError(f"Invalid dimensions format: {filter_dimensions}")
+                    filter_dimensions = json.loads(filter_dimensions)
+
 
             # Build ListMetrics request
             list_params = {"Namespace": self.namespace}
@@ -320,7 +320,7 @@ def register_lakeflow_source(spark):
                         # (simplified - in production use retry decorator)
                         time.sleep(1)
                         continue
-                    raise RuntimeError(f"Failed to list metrics: {e}")
+                    raise
 
                 metrics = response.get("Metrics", [])
                 all_metrics.extend(metrics)
@@ -651,7 +651,7 @@ def register_lakeflow_source(spark):
                         # (simplified - in production use retry decorator)
                         time.sleep(1)
                         continue
-                    raise RuntimeError(f"Failed to get metric data: {e}")
+                    raise
 
                 # Process response
                 metric_data_results = response.get("MetricDataResults", [])

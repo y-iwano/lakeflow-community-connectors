@@ -51,4 +51,3 @@ def test_aws_cloudwatch_metrics_connector():
         f"Test suite had failures: {report.failed_tests} failed, "
         f"{report.error_tests} errors"
     )
-
