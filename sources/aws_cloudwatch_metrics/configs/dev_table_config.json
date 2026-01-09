@@ -1,0 +1,7 @@
+{
+    "metrics": {
+        "period": 300,
+        "statistics": ["Average"]
+    }
+}
+
